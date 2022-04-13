@@ -1,6 +1,7 @@
 package com.example.foregroundlocation
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
@@ -12,90 +13,102 @@ import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
+import com.example.foregroundlocation.databinding.ActivityMainBinding
 import com.google.android.gms.location.*
 import java.util.*
 import kotlin.collections.ArrayList
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var address:List<Address>
-    private var geocoder:Geocoder?=null
- private lateinit var  text_location:TextView
-    private lateinit var button_location:Button
-    private lateinit var mFusedLocationProvider: FusedLocationProviderClient
-    private var locationRequest: LocationRequest? = null
-    private var mCurrentLocation: Location? = null
-    private var locationCallback: LocationCallback? = null
-    private val locationRequestCode = 1000
+private lateinit var binding:ActivityMainBinding
+    lateinit var mFusedLocationProviderClient: FusedLocationProviderClient
+    val locationRequestId = 100
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        button_location=findViewById(R.id.button_location)
-        text_location=findViewById(R.id.text_location)
-        mFusedLocationProvider = LocationServices.getFusedLocationProviderClient(this)
-        locationRequest = LocationRequest.create()
-        locationRequest?.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-        locationRequest?.interval = (3 * 1000).toLong()
-        locationRequest?.fastestInterval = (5 * 1000).toLong()
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(p0: LocationResult) {
-                if (p0.locations == null) {
-                    return
-                }
-                for (location in p0.locations) {
-                    if (location != null) {
-                        mCurrentLocation = location
-                        if (mFusedLocationProvider != null) {
-                            mFusedLocationProvider?.removeLocationUpdates(locationCallback!!)
-                        }
-                    }
-                }
-            }
+        binding= ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+       binding.btGetAdd.setOnClickListener {
+            getLocation()
         }
-//        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-//            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-//
-//
-//        }
-//        else
-//        {
-//            requestLocation()
-//        }
-        requestLocation()
+    }
 
-            button_location.setOnClickListener {
-                var location = getCurrentLocation()
-                geocoder = Geocoder(this, Locale.getDefault())
-                address = geocoder!!.getFromLocation(location!!.latitude,location!!.longitude, 1) as ArrayList<Address>
-//            text_location.text = location?.latitude.toString() + " " + location?.longitude.toString()
-                text_location.text =address.get(0).getAddressLine(0)
-            }
+    fun getLocation() {
+
+        if (checkForLocationPermission()) {
+            updateLocation()
+        } else {
+            askLocationPermission()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun updateLocation() {
+        var locationRequest = LocationRequest()
+        locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+        locationRequest.interval = 10000
+        locationRequest.fastestInterval = 5000
+
+        mFusedLocationProviderClient = FusedLocationProviderClient(this)
+        mFusedLocationProviderClient.requestLocationUpdates(
+            locationRequest, mLocationCallback,
+            Looper.myLooper()!!
+        )
+    }
+
+
+    var mLocationCallback = object : LocationCallback() {
+        override fun onLocationResult(p0: LocationResult) {
+
+            var location: Location = p0.lastLocation
+
+            updateAddressUI(location)
+
+        }
+    }
+
+    fun updateAddressUI(location: Location) {
+
+        var geocoder: Geocoder
+        var addressList = ArrayList<Address>()
+
+        geocoder = Geocoder(applicationContext, Locale.getDefault())
+
+        addressList = geocoder.getFromLocation(
+            location.latitude,
+            location.longitude,
+            1
+        ) as ArrayList<Address>
+
+        binding.tvAdd.text = addressList.get(0).getAddressLine(0)
 
 
     }
-  private fun requestLocation(){
-      if (ActivityCompat.checkSelfPermission(
-              this,
-              Manifest.permission.ACCESS_FINE_LOCATION
-          ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
-              this,
-              Manifest.permission.ACCESS_COARSE_LOCATION
-          ) != PackageManager.PERMISSION_GRANTED
-      ) {
-          ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-              locationRequestCode)
-          return
-      }else{
-          mFusedLocationProvider.lastLocation.addOnSuccessListener(this) { location ->
-              if (location != null) {
-                  mCurrentLocation = location
-              } else {
-                  mFusedLocationProvider.requestLocationUpdates(locationRequest!!, locationCallback!!,
-                      Looper.myLooper()!! )
-              }
-          }
-      }
 
-  }
+
+    fun checkForLocationPermission(): Boolean {
+
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+            return true
+
+        return false
+
+    }
+
+
+    fun askLocationPermission() {
+
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+            locationRequestId
+        )
+
+    }
+
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -103,19 +116,15 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            1000 -> {
-                // If request is cancelled, the result arrays are empty.
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                    requestLocation()
 
-                } else {
-                    Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show()
-                }
+        if (requestCode == locationRequestId) {
+
+            if (grantResults != null && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                getLocation()
             }
         }
+
     }
-    private fun getCurrentLocation(): Location? {
-        return mCurrentLocation ?: null
-    }
+
 }
